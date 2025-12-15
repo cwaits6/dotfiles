@@ -1,0 +1,23 @@
+# $HOME/Library/Application\ Support/com.mitchellh.ghostty/config
+
+# Run `ghostty +show-config --default --docs` to view a list of
+# all available config options and their default values.
+
+font-family = "FiraCode Nerd Font Mono"
+theme = tokyonight_moon
+
+# super+s → tmux vertical split (pane to the right)
+keybind = super+s=text:\x02%
+
+# super+Shift+s → tmux horizontal split (pane below)
+keybind = super+shift+s=text:\x02"
+
+# Pane Navigation
+keybind = performable:super+h=goto_split:left
+keybind = performable:super+j=goto_split:bottom
+keybind = performable:super+k=goto_split:top
+keybind = performable:super+l=goto_split:right
+
+# Tab Navigation
+keybind = performable:super+shift+h=previous_tab
+keybind = performable:super+shift+l=next_tab
