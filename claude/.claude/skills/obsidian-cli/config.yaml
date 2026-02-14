@@ -1,0 +1,59 @@
+# Obsidian CLI Skill Configuration Template
+
+contexts:
+  - work
+  - personal
+  - army
+
+note_types:
+  note: General purpose note for anything that doesn't fit another type
+  meeting: Meeting notes
+  reference: Documents what something is or how something works. Also for learning, studying for certifications, or continuing education on a topic
+  how-to: Step-by-step procedure for accomplishing a specific task
+  troubleshooting: Problem and solution documentation
+  snippet: Short, reusable commands, code patterns, config blocks, or API calls
+  skill: AI skills that have been created or generated
+  inbox: Quick capture with no structure
+
+universal_properties:
+  type:
+    description: Note classification
+    required: true
+    allowed_values: "Keys from note_types above"
+
+  context:
+    description: Life domain
+    required: true
+    allowed_values: "Values from contexts list above"
+
+  topic:
+    description: Broad categories - always a list, even for single values
+    required: true
+    type: list
+    examples: [kubernetes, aws, terraform, networking, finance]
+
+  project:
+    description: Specific initiative
+    required: false
+    type: string
+
+  tags:
+    description: Freeform catch-all for miscellaneous metadata
+    required: false
+    type: list
+
+conditional_properties:
+  troubleshooting:
+    resolved:
+      description: Whether the issue has been resolved
+      type: boolean
+      default: false
+
+naming_conventions:
+  file_format: lowercase-kebab-case
+  file_examples: my-meeting-notes.md, eks-irsa-setup.md
+  folder_format: Capitalized-Kebab-Case
+  folder_examples: My-Notes, Projects, Reference
+
+# Vault path (optional - helps for relative path operations)
+# vault_path: /path/to/your/vault
