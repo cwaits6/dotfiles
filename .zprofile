@@ -1,9 +1,9 @@
-# ---- Homebrew environment ---- #
-if [[ -x /opt/homebrew/bin/brew ]]; then
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-elif command -v brew >/dev/null 2>&1; then
-  eval "$(brew shellenv)"
-fi
+# ---- Homebrew environment (Apple Silicon) ---- #
+for b in /opt/homebrew/bin/brew "$HOME/.homebrew/bin/brew"; do
+  [[ -x "$b" ]] && eval "$("$b" shellenv)" && break
+done
+
+export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"
 
 # ---- Clean PATH edits with zsh array ---- #
 setopt extended_glob null_glob
