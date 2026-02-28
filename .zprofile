@@ -19,6 +19,7 @@ path=(
   /Applications/VMware\ Fusion.app/Contents/Public
   /usr/local/zfs/bin
   /Applications/Ghostty.app/Contents/MacOS
+  /Applications/Obsidian.app/Contents/MacOS
   $path
 )
 
