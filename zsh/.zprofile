@@ -1,30 +1,28 @@
-# ---- Homebrew environment (Apple Silicon) ---- #
+# -------- homebrew -------- #
+
 for b in /opt/homebrew/bin/brew "$HOME/.homebrew/bin/brew"; do
   [[ -x "$b" ]] && eval "$("$b" shellenv)" && break
 done
 
 export HOMEBREW_CASK_OPTS="--appdir=$HOME/Applications"
 
-# ---- Clean PATH edits with zsh array ---- #
-setopt extended_glob null_glob
+# ---------- path ---------- #
 
-# ---- Remove duplicate entries ---- #
+setopt extended_glob null_glob
 typeset -U path
 
-# ---- PATH ---- #
 path=(
   $HOME/.local/bin
   /usr/local/bin
   /Applications/Wireshark.app/Contents/MacOS
-  /Applications/VMware\ Fusion.app/Contents/Public
+  /Applications/VMware\ Fusion.app/Contents/MacOS
   /usr/local/zfs/bin
   /Applications/Ghostty.app/Contents/MacOS
   /Applications/Obsidian.app/Contents/MacOS
   $path
 )
 
-# ---- Remove non-existant directories ---- #
+# remove non-existent directories
 path=($^path(N-/))
 
 export PATH
-
