@@ -74,6 +74,10 @@ alias sz='source ~/.zshrc'
 alias nzp='nvim ~/.zprofile'
 alias szp='source ~/.zprofile'
 
+# ----------- fzf ---------- #
+
+bindkey '\ef' fzf-history-widget
+
 # ---------- shell --------- #
 
 alias e='exit'
@@ -116,6 +120,12 @@ al() {
   echo "Logged in. profile='$profile' account='${AWS_ACCOUNT_ID:-?}' region='${AWS_REGION:-${AWS_DEFAULT_REGION:-?}}'"
   [[ -n "$arn" ]] && echo "Caller: $arn"
 }
+
+# ----------- fzf ---------- #
+
+if command -v fzf >/dev/null 2>&1; then
+  source <(fzf --zsh)
+fi
 
 # ---------- evals --------- #
 
