@@ -29,6 +29,10 @@ if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
   source "$ZSH/oh-my-zsh.sh"
 fi
 
+# ------- vim keybindings ----- #
+
+bindkey -v
+
 # ----------- gpg ---------- #
 
 export GPG_TTY="$(tty)"
