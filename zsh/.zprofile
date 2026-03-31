@@ -13,6 +13,7 @@ typeset -U path
 
 path=(
   $HOME/.local/bin
+  ${KREW_ROOT:-$HOME/.krew}/bin
   /usr/local/bin
   /Applications/Wireshark.app/Contents/MacOS
   /Applications/VMware\ Fusion.app/Contents/MacOS
