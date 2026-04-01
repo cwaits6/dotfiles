@@ -65,6 +65,11 @@ fi
 alias lg='lazygit'
 alias lzd='lazydocker'
 
+# ---------- krew ---------- #
+
+alias krew='kubectl krew'
+alias stern='kubectl stern'
+
 # --------- neovim --------- #
 
 alias n='nvim'
