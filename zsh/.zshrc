@@ -15,6 +15,7 @@ if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
   ZSH_THEME="powerlevel10k/powerlevel10k"
   plugins=(
     aws
+    brew
     git
     helm
     history
@@ -91,6 +92,7 @@ bindkey '\ef' fzf-history-widget
 
 alias e='exit'
 alias q='exit'
+alias cpwd='pwd | pbcopy'
 
 # -------------------------- #
 #          Functions
