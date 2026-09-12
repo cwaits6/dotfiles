@@ -16,3 +16,7 @@ vim.keymap.set("n", "c", '"cc', { noremap = true })
 vim.keymap.set("v", "c", '"cc', { noremap = true })
 vim.keymap.set("n", "C", '"cC', { noremap = true })
 vim.keymap.set("v", "C", '"cC', { noremap = true })
+
+-- Resize explorer/split width
+vim.keymap.set("n", "<leader><", "10<C-w><", { desc = "Shrink split width" })
+vim.keymap.set("n", "<leader>>", "10<C-w>>", { desc = "Grow split width" })
