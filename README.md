@@ -14,6 +14,7 @@ Managed with [GNU Stow](https://www.gnu.org/software/stow/).
 - **ghostty** — Ghostty terminal config
 - **claude** — Claude Code custom agents and skills
 - **zsh** — zsh with oh-my-zsh and Powerlevel10k
+- **herdr** — Herdr terminal multiplexer config
 
 ## Prerequisites
 
@@ -23,6 +24,7 @@ Managed with [GNU Stow](https://www.gnu.org/software/stow/).
 - [oh-my-zsh](https://ohmyz.sh/) — `sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"`
 - [Powerlevel10k](https://github.com/romkatv/powerlevel10k) — `brew install powerlevel10k`
 - [Claude Code](https://claude.ai/code) — `curl -fsSL https://claude.ai/install.sh | bash` or `brew install --cask claude-code`
+- [Herdr](https://herdr.dev) — terminal agent multiplexer — `brew install herdr`
 
 ## Quick Start
 
@@ -31,11 +33,12 @@ git clone https://github.com/cwaits6/dotfiles ~/.dotfiles
 cd ~/.dotfiles
 
 # Apply all configs
-stow nvim ghostty claude zsh
+stow nvim ghostty claude zsh herdr
 
 # Or pick individual ones
 stow nvim
 stow zsh
 stow ghostty
 stow claude
+stow herdr
 ```
