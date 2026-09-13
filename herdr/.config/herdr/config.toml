@@ -7,6 +7,10 @@ onboarding = false
 [theme]
 name = "tokyo-night"
 
+[ui]
+# Tabs
+prompt_new_tab_name = false
+
 [keys]
 prefix = "ctrl+alt+cmd+shift+space"
 
@@ -23,7 +27,8 @@ focus_pane_right = ["ctrl+alt+cmd+shift+l", "prefix+l"]
 split_vertical = ["alt+d", "prefix+v"]
 split_horizontal = ["alt+shift+d", "prefix+minus"]
 
-# Tab Navigation
+# Tabs
+new_tab = ["ctrl+alt+cmd+shift+t", "prefix+c"]
 previous_tab = ["ctrl+alt+h", "prefix+p"]
 next_tab = ["ctrl+alt+l", "prefix+n"]
 
