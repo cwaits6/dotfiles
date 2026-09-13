@@ -10,19 +10,22 @@ name = "tokyo-night"
 [keys]
 prefix = "ctrl+alt+cmd+shift+space"
 
+# Zoom
+zoom = ["ctrl+alt+cmd+shift+enter", "prefix+z"]
+
 # Pane Navigation
-focus_pane_left = "ctrl+alt+cmd+shift+h"
-focus_pane_down = "ctrl+alt+cmd+shift+j"
-focus_pane_up = "ctrl+alt+cmd+shift+k"
-focus_pane_right = "ctrl+alt+cmd+shift+l"
+focus_pane_left = ["ctrl+alt+cmd+shift+h", "prefix+h"]
+focus_pane_down = ["ctrl+alt+cmd+shift+j", "prefix+j"]
+focus_pane_up = ["ctrl+alt+cmd+shift+k", "prefix+k"]
+focus_pane_right = ["ctrl+alt+cmd+shift+l", "prefix+l"]
 
 # Split Panes
-split_vertical = "alt+d"
-split_horizontal = "alt+shift+d"
+split_vertical = ["alt+d", "prefix+v"]
+split_horizontal = ["alt+shift+d", "prefix+minus"]
 
 # Tab Navigation
-previous_tab = "ctrl+alt+h"
-next_tab = "ctrl+alt+l"
+previous_tab = ["ctrl+alt+h", "prefix+p"]
+next_tab = ["ctrl+alt+l", "prefix+n"]
 
 # Workspace Navigation
 previous_workspace = "ctrl+alt+k"
