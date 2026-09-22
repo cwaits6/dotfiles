@@ -6,12 +6,6 @@
 font-family = "FiraCode Nerd Font Mono"
 theme = "TokyoNight Moon"
 
-# super+s → tmux vertical split (pane to the right)
-keybind = super+s=text:\x02%
-
-# super+Shift+s → tmux horizontal split (pane below)
-keybind = super+shift+s=text:\x02"
-
 # Pane Navigation
 keybind = performable:super+h=goto_split:left
 keybind = performable:super+j=goto_split:bottom
