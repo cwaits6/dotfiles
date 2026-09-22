@@ -4,6 +4,10 @@
 
 onboarding = false
 
+[terminal]
+default_shell = "/bin/zsh"
+shell_mode = "login"
+
 [theme]
 name = "tokyo-night"
 
