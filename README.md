@@ -33,12 +33,13 @@ git clone https://github.com/cwaits6/dotfiles ~/.dotfiles
 cd ~/.dotfiles
 
 # Apply all configs
-stow nvim ghostty claude zsh herdr
+stow nvim ghostty claude zsh
+stow --no-folding herdr
 
 # Or pick individual ones
 stow nvim
 stow zsh
 stow ghostty
 stow claude
-stow herdr
+stow --no-folding herdr
 ```
