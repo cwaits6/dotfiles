@@ -22,24 +22,25 @@ prefix = "ctrl+alt+cmd+shift+space"
 zoom = ["ctrl+alt+cmd+shift+enter", "prefix+z"]
 
 # Pane Navigation
-focus_pane_left = ["ctrl+alt+cmd+shift+h", "prefix+h"]
-focus_pane_down = ["ctrl+alt+cmd+shift+j", "prefix+j"]
-focus_pane_up = ["ctrl+alt+cmd+shift+k", "prefix+k"]
-focus_pane_right = ["ctrl+alt+cmd+shift+l", "prefix+l"]
+focus_pane_left = ["cmd+h", "prefix+h"]
+focus_pane_down = ["cmd+j", "prefix+j"]
+focus_pane_up = ["cmd+k", "prefix+k"]
+focus_pane_right = ["cmd+l", "prefix+l"]
 
 # Split Panes
-split_vertical = ["alt+d", "prefix+v"]
-split_horizontal = ["alt+shift+d", "prefix+minus"]
+split_vertical = ["cmd+d", "prefix+v"]
+split_horizontal = ["cmd+shift+d", "prefix+minus"]
 
 # Tabs
-new_tab = ["ctrl+alt+cmd+shift+t", "prefix+c"]
-previous_tab = ["ctrl+alt+h", "prefix+p"]
-next_tab = ["ctrl+alt+l", "prefix+n"]
+new_tab = ["cmd+t", "prefix+c"]
+previous_tab = ["cmd+shift+h", "prefix+p"]
+next_tab = ["cmd+shift+l", "prefix+n"]
+switch_tab = "cmd+alt+1..9"
 
 # Workspace Navigation
-previous_workspace = "ctrl+alt+k"
-next_workspace = "ctrl+alt+j"
-switch_workspace = "ctrl+alt+1..9"
+previous_workspace = "cmd+shift+k"
+next_workspace = "cmd+shift+j"
+switch_workspace = "cmd+alt+shift+1..9"
 
 # Agent Navigation
 previous_agent = "ctrl+alt+shift+k"
