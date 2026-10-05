@@ -7,11 +7,19 @@ font-family = "FiraCode Nerd Font Mono"
 theme = "TokyoNight Moon"
 
 # Pane Navigation
-keybind = performable:super+h=goto_split:left
-keybind = performable:super+j=goto_split:bottom
-keybind = performable:super+k=goto_split:top
-keybind = performable:super+l=goto_split:right
+# keybind = performable:super+h=goto_split:left
+# keybind = performable:super+j=goto_split:bottom
+# keybind = performable:super+k=goto_split:top
+# keybind = performable:super+l=goto_split:right
 
 # Tab Navigation
-keybind = performable:super+shift+h=previous_tab
-keybind = performable:super+shift+l=next_tab
+# keybind = performable:super+shift+h=previous_tab
+# keybind = performable:super+shift+l=next_tab
+
+# Release shortcuts now handled by Herdr
+keybind = super+h=csi:104;9u
+keybind = super+shift+j=unbind
+keybind = super+shift+k=unbind
+keybind = super+d=unbind
+keybind = super+shift+d=unbind
+keybind = super+t=unbind
