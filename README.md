@@ -43,6 +43,8 @@ exec zsh
 
 Steps that fail (for example, a tool blocked on a work machine) are skipped and listed at the end.
 
+After the first install, run `dots` to pull the latest changes, re-run `install.sh` and reload zsh.
+
 ## Manual stow
 
 ```sh

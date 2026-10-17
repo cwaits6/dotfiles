@@ -86,6 +86,11 @@ alias sz='source ~/.zshrc'
 alias nzp='nvim ~/.zprofile'
 alias szp='source ~/.zprofile'
 
+# ------- dotfiles ------- #
+
+# Pull the latest dotfiles, re-run the installer, then reload zsh
+alias dots='git -C ~/.dotfiles pull --ff-only && ~/.dotfiles/install.sh && exec zsh'
+
 # ----------- fzf ---------- #
 
 bindkey '\ef' fzf-history-widget
