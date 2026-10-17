@@ -15,7 +15,6 @@ if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
   ZSH_THEME="powerlevel10k/powerlevel10k"
   plugins=(
     aws
-    brew
     git
     helm
     history
@@ -27,6 +26,7 @@ if [[ -f "$ZSH/oh-my-zsh.sh" ]]; then
     zsh-autosuggestions
     zsh-syntax-highlighting
   )
+  command -v brew >/dev/null 2>&1 && plugins+=(brew)
   source "$ZSH/oh-my-zsh.sh"
 fi
 
@@ -73,9 +73,11 @@ alias stern='kubectl stern'
 
 # --------- neovim --------- #
 
-alias n='nvim'
-alias nv='nvim'
-alias vim='nvim'
+if command -v nvim >/dev/null 2>&1; then
+  alias n='nvim'
+  alias nv='nvim'
+  alias vim='nvim'
+fi
 
 # -------- zsh files ------- #
 
@@ -83,6 +85,11 @@ alias nz='nvim ~/.zshrc'
 alias sz='source ~/.zshrc'
 alias nzp='nvim ~/.zprofile'
 alias szp='source ~/.zprofile'
+
+# ------- dotfiles ------- #
+
+# Pull the latest dotfiles, re-run the installer, then reload zsh
+alias dots='git -C ~/.dotfiles pull --ff-only && ~/.dotfiles/install.sh && exec zsh'
 
 # ----------- fzf ---------- #
 
@@ -92,7 +99,13 @@ bindkey '\ef' fzf-history-widget
 
 alias e='exit'
 alias q='exit'
-alias cpwd='pwd | pbcopy'
+
+# pbcopy on macOS; OSC 52 elsewhere, which reaches the local clipboard over SSH
+if command -v pbcopy >/dev/null 2>&1; then
+  alias cpwd='pwd | pbcopy'
+else
+  cpwd() { printf '\e]52;c;%s\a' "$(pwd | tr -d '\n' | base64 | tr -d '\n')"; }
+fi
 
 # -------------------------- #
 #          Functions
@@ -135,7 +148,8 @@ al() {
 # ----------- fzf ---------- #
 
 if command -v fzf >/dev/null 2>&1; then
-  source <(fzf --zsh)
+  # fzf < 0.48 (e.g. Ubuntu's apt package) has no --zsh flag
+  source <(fzf --zsh 2>/dev/null)
 fi
 
 # ---------- evals --------- #
