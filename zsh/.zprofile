@@ -1,6 +1,6 @@
 # -------- homebrew -------- #
 
-for b in /opt/homebrew/bin/brew "$HOME/.homebrew/bin/brew"; do
+for b in /opt/homebrew/bin/brew "$HOME/.homebrew/bin/brew" /home/linuxbrew/.linuxbrew/bin/brew; do
   [[ -x "$b" ]] && eval "$("$b" shellenv)" && break
 done
 

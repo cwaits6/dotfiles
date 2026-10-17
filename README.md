@@ -1,6 +1,7 @@
 # dotfiles
 
 ![macOS](https://img.shields.io/badge/platform-macOS-lightgrey?logo=apple)
+![Linux](https://img.shields.io/badge/platform-Ubuntu%20%7C%20Debian-orange?logo=ubuntu)
 ![Neovim](https://img.shields.io/badge/Neovim-0.11+-green?logo=neovim)
 ![Managed with Stow](https://img.shields.io/badge/managed_with-GNU_Stow-blue)
 
@@ -30,16 +31,22 @@ Managed with [GNU Stow](https://www.gnu.org/software/stow/).
 
 ```sh
 git clone https://github.com/cwaits6/dotfiles ~/.dotfiles
+~/.dotfiles/install.sh
+exec zsh
+```
+
+`install.sh` is safe to re-run. It:
+
+- **macOS:** installs everything in the `Brewfile`, then stows `zsh nvim ghostty claude herdr`.
+- **Ubuntu/Debian:** installs `zsh stow git curl zoxide` with apt and a current `fzf`, then stows `zsh`.
+- **Both:** installs oh-my-zsh, Powerlevel10k and the zsh plugins, backs up any existing dotfiles it would replace (`*.bak.<timestamp>`), and sets zsh as the default shell.
+
+Steps that fail (for example, a tool blocked on a work machine) are skipped and listed at the end.
+
+## Manual stow
+
+```sh
 cd ~/.dotfiles
-
-# Apply all configs
 stow nvim ghostty claude zsh
-stow --no-folding herdr
-
-# Or pick individual ones
-stow nvim
-stow zsh
-stow ghostty
-stow claude
 stow --no-folding herdr
 ```
