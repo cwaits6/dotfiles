@@ -1,0 +1,394 @@
+name: coderabbit-review-loop
+description: |
+  The CodeRabbit tail on its own: for the ready PR on this branch, exhaust
+  local CodeRabbit CLI reviews first (fix or decline, commit, push once), then
+  wait for CodeRabbit on the PR, address every thread and nitpick (fix, or
+  reply with the reason it is declined), resolve the threads, and repeat until
+  the head is reviewed (by CodeRabbit on the PR, or for fix commits after
+  that one PR review, by the local CLI) with nothing open and CI is green.
+  With pr_review "false" (the default) the local CLI review is the one the run
+  waits for. After the local phase the hold label is lifted and the PR is
+  flipped to draft and back to ready, so CodeRabbit's automatic ready review
+  sees reviewed code; nothing is posted and the run never waits for it (whoever
+  merges answers it if it landed). The tail loops on CI alone, re-reviewing CI
+  fix commits with the local CLI.
+  ship-coderabbit runs it after archon-ship; run it directly with --branch on
+  a PR that already exists. Repo-agnostic: checks and rules come from the
+  repo's own agent instructions (CLAUDE.md / AGENTS.md).
+
+  NOT for: merging (always the maintainer).
+
+requires: [github]
+
+inputs:
+  hold_label:
+    default: "skip-review"
+    description: >-
+      Label ship-coderabbit puts on the draft so the ready flip spends no PR
+      review. Only effective when the repo's .coderabbit.yaml excludes it
+      (auto_review.labels: ["!skip-review"]); otherwise harmless.
+  pr_review:
+    default: "false"
+    description: >-
+      "true" requests one CodeRabbit PR review after the local phase and loops
+      on its threads; "false" relies on the local CLI review, re-marks the PR
+      ready so CodeRabbit auto-reviews once without being waited on, and loops
+      on CI only.
+
+nodes:
+  # archon-ship completes on advisory stops too (no_action, plan not ready);
+  # only a ready PR on this branch enters the loop.
+  - id: pr
+    bash: |
+      set -uo pipefail
+      if ! PR=$(gh pr view --json number,isDraft,url 2>/dev/null); then
+        echo '{"has_pr":"false"}'; exit 0
+      fi
+      printf '%s' "$PR" | python3 -c 'import json,sys; p=json.load(sys.stdin); print(json.dumps({"has_pr": "false" if p["isDraft"] else "true", "number": p["number"], "url": p["url"]}))'
+    output_format:
+      type: object
+      properties:
+        has_pr: { type: string }
+        number: { type: number }
+        url: { type: string }
+      required: [has_pr]
+
+  - id: mode
+    depends_on: [pr]
+    bash: |
+      HAS=$pr.output.has_pr
+      if [ "$HAS" != "true" ]; then PRL=false; CIL=false
+      elif [ "$INPUTS_PR_REVIEW" = "true" ]; then PRL=true; CIL=false
+      else PRL=false; CIL=true; fi
+      printf '{"pr_review":"%s","pr_loop":"%s","ci_loop":"%s"}\n' "${INPUTS_PR_REVIEW:-false}" "$PRL" "$CIL"
+    output_format:
+      type: object
+      properties:
+        pr_review: { type: string }
+        pr_loop: { type: string }
+        ci_loop: { type: string }
+      required: [pr_review, pr_loop, ci_loop]
+
+  # Local CLI reviews draw on their own hourly allowance, so they are spent
+  # first and the PR's reviews confirm what is left. Commits stay local until
+  # the phase ends: every push to the PR spends a PR review.
+  - id: local
+    depends_on: [pr, mode]
+    when: "$pr.output.has_pr == 'true'"
+    loop_group:
+      max_iterations: 4
+      fresh_context: true
+      until_bash: 'grep -qx clean "$ARTIFACTS_DIR/coderabbit/local-state" 2>/dev/null || { [ "$INPUTS_PR_REVIEW" = "true" ] && grep -qx exhausted "$ARTIFACTS_DIR/coderabbit/local-state" 2>/dev/null; }'
+      nodes:
+        # Without a PR review the local CLI is the only review, so an empty
+        # hourly allowance (shared by every parallel run) is waited out.
+        - id: local-quota
+          timeout: 4200000
+          bash: |
+            [ $mode.output.pr_review = "true" ] && exit 0
+            for i in $(seq 1 13); do
+              R=$(coderabbit usage 2>/dev/null | sed -nE 's/^ *Remaining *: *([0-9]+) of.*/\1/p' | head -1)
+              [ -n "$R" ] && [ "$R" -gt 0 ] && { echo "CodeRabbit CLI reviews remaining: $R"; exit 0; }
+              echo "No CLI reviews left; waiting 5 minutes."; sleep 300
+            done
+            echo "CLI allowance still empty after an hour; the review step will record it."
+
+        - id: local-review
+          depends_on: [local-quota]
+          model: large
+          prompt: |
+            You are finishing pull request #$pr.output.number ($pr.output.url) in this
+            worktree. Before CodeRabbit's PR reviews are spent, use the local CodeRabbit
+            CLI to catch what it would flag. Read the repo's agent instructions (CLAUDE.md, AGENTS.md, or equivalent) first; they are binding. The
+            original work order is in $ARTIFACTS_DIR (triage.md, plan.md or
+            investigation.md when present).
+
+            PR review mode: "$mode.output.pr_review". When it is "false" no CodeRabbit PR
+            review will follow, so this local review is the only one the PR gets.
+
+            1. Run `coderabbit usage`. If it shows 0 included reviews remaining, or the
+               CLI is not signed in, write `exhausted` to
+               $ARTIFACTS_DIR/coderabbit/local-state (mkdir -p the directory) and stop.
+               Never pass --use-credits.
+            2. Run `coderabbit review --agent --base origin/main` and read every finding.
+               If it reports a rate limit, write `exhausted` as above and stop.
+               In mode "false" an `exhausted` round is retried after the quota wait,
+               so record it and stop; do not skip ahead.
+            3. Findings already recorded in $ARTIFACTS_DIR/coderabbit/local-declined.md
+               were judged in an earlier round; do not relitigate them. For every other
+               finding decide on the merits: fix it, or append it to local-declined.md
+               with the concrete reason (a repo rule, the code, or the ticket's
+               scope).
+            4. Run the checks those instructions require for what you touched (lint,
+               type check, tests, and any guards they name) and commit using the repo's
+               commit convention. Do not push.
+            5. If this review raised nothing you fixed (no findings, or only declined
+               ones), write `clean` to $ARTIFACTS_DIR/coderabbit/local-state.
+
+            Never force-push, rebase, merge, or edit the PR. Follow the repo's rules for
+            code comments. Finish by listing what you fixed and what you declined.
+
+  # all_done: a local phase that hits its round bound still hands over to the
+  # PR loop, which would otherwise never lift the hold label.
+  # ship-coderabbit labels the draft with hold_label so the ready flip does not spend a
+  # PR review on pre-local code. Lifting the label does not start a review and
+  # (with auto_incremental_review off) neither does a push, so it is requested.
+  - id: local-push
+    depends_on: [local, mode]
+    when: "$pr.output.has_pr == 'true'"
+    trigger_rule: all_done
+    bash: |
+      set -uo pipefail
+      N=$pr.output.number
+      L="$INPUTS_HOLD_LABEL"
+      HELD=no
+      if [ $mode.output.pr_review != "true" ]; then
+        if gh pr view "$N" --json labels --jq '.labels[].name' | grep -qxF "$L"; then
+          gh pr edit "$N" --remove-label "$L" >/dev/null && HELD=yes && echo "Removed $L."
+        fi
+      elif gh pr view "$N" --json labels --jq '.labels[].name' | grep -qxF "$L"; then
+        gh pr edit "$N" --remove-label "$L" >/dev/null
+        HELD=yes
+        echo "Removed $L."
+      fi
+      git fetch -q origin
+      BR=$(git branch --show-current)
+      if ! git rev-parse -q --verify "refs/remotes/origin/$BR" >/dev/null; then
+        echo "local-push: origin/$BR does not exist" >&2; exit 1
+      fi
+      D="$ARTIFACTS_DIR/coderabbit"
+      mkdir -p "$D"
+      if [ "$(git rev-list --count "origin/$BR"..HEAD)" != "0" ]; then
+        git push -q origin "HEAD:refs/heads/$BR"
+        LOCAL=$(git rev-parse HEAD)
+        REMOTE=$(git ls-remote origin "refs/heads/$BR" | cut -f1)
+        if [ "$LOCAL" != "$REMOTE" ]; then
+          echo "local-push: remote head $REMOTE does not match local $LOCAL" >&2; exit 1
+        fi
+        echo "Pushed local review fixes up to $LOCAL."
+      fi
+      HEAD_SHA=$(git rev-parse HEAD)
+      # A clean local phase vouches for this head if the PR review never comes
+      # (unheld PR, reviewed at the ready flip, before these commits).
+      if grep -qx clean "$D/local-state" 2>/dev/null; then
+        touch "$D/local-reviewed-$HEAD_SHA"
+      fi
+      # The repo sets auto_incremental_review: false, so a push does not start a
+      # review; the held PR's one review is requested by the probe, which waits
+      # for the PR-review slot shared by every run.
+      # Re-marking ready emits ready_for_review, which CodeRabbit auto-reviews
+      # (the label held it at archon-ship's flip). CI ignores that event.
+      if [ $mode.output.pr_review != "true" ]; then
+        if [ "$HELD" = yes ] && gh pr ready "$N" --undo >/dev/null && gh pr ready "$N" >/dev/null; then
+          echo "Re-marked the PR ready at $HEAD_SHA; CodeRabbit reviews it on its own. The tail loops on CI."
+        else
+          echo "PR was not held or could not be re-marked ready; the tail loops on CI."
+        fi
+      elif [ "$HELD" = yes ]; then
+        touch "$D/want-review"
+        echo "Queued the held CodeRabbit PR review of $HEAD_SHA for the shared review slot."
+      else
+        echo "PR was not held; CodeRabbit reviewed it at the ready flip."
+      fi
+
+  # Each round: probe once, then exactly one of: fix (actionable), hold until a
+  # rate limit's stated replenish time, or a 5-minute wait while CodeRabbit or CI
+  # works. 36 rounds is a runaway backstop, not a pacing device.
+  - id: coderabbit
+    depends_on: [local-push, mode]
+    when: "$mode.output.pr_loop == 'true'"
+    loop_group:
+      max_iterations: 36
+      fresh_context: true
+      until_bash: 'grep -qxE "done|skipped|blocked" "$ARTIFACTS_DIR/coderabbit/state" 2>/dev/null'
+      nodes:
+        - id: cr-probe
+          script: coderabbit-probe
+          runtime: uv
+          timeout: 120000
+          with:
+            artifacts: "$ARTIFACTS_DIR"
+
+        - id: cr-fix
+          depends_on: [cr-probe]
+          when: "$cr-probe.output.state == 'actionable'"
+          model: large
+          prompt: |
+            You are finishing pull request #$pr.output.number ($pr.output.url) in this
+            worktree. The run's earlier stages implemented it, reviewed it internally,
+            marked it ready and ran local CodeRabbit reviews. CodeRabbit has now reviewed
+            it on the PR. Your job this round is to close out what CodeRabbit and CI
+            currently report, then push.
+
+            Current state (JSON from the probe):
+            $cr-probe.output
+
+            Read the repo's agent instructions (CLAUDE.md, AGENTS.md, or equivalent) and the PR body first; they are binding. The original work
+            order is in $ARTIFACTS_DIR (triage.md, plan.md or investigation.md when
+            present); findings already declined in local review are in
+            $ARTIFACTS_DIR/coderabbit/local-declined.md.
+
+            1. Unresolved CodeRabbit threads (`unresolved_threads`). For each, read the
+               full thread (`gh api graphql` on the thread id, or the comment url). Decide
+               on the merits — CodeRabbit is often right and sometimes wrong for this repo.
+               - Valid: fix it. After the fix is pushed, reply on the thread with one line
+                 naming the commit that fixed it, then resolve the thread with the GraphQL
+                 `resolveReviewThread` mutation.
+               - Not valid, or out of this ticket's scope: reply on the thread with the
+                 concrete reason (cite the repo rule, the code, or the ticket's
+                 Out of scope), then resolve it. Never resolve a thread without a reply.
+            2. Unaddressed CodeRabbit reviews (`unaddressed_reviews`). Read each review's
+               body (`gh api repos/{owner}/{repo}/pulls/$pr.output.number/reviews/<id>`).
+               Nitpicks and "outside diff range" comments live in the body, not in
+               threads. Apply each nitpick that improves the change; for each you decline,
+               note why. Post one PR comment summarizing which nitpicks were applied and
+               which were declined with the reason. Then append the review id on its own
+               line to $ARTIFACTS_DIR/coderabbit/addressed-reviews.txt — only after the
+               fixes for it are pushed.
+            3. Red CI (`ci_red`). Read the failing job log (`gh run view --log-failed`).
+               Red this branch caused is part of this round's work. Red it cannot have
+               caused (an infrastructure flake) gets one `gh run rerun --failed` per check
+               per head; if the same check is red again on the same head, say so in
+               $ARTIFACTS_DIR/coderabbit/blocked.md.
+
+            Before pushing, run the checks the repo's instructions require for what you
+            touched and commit using the repo's commit convention.
+
+            CodeRabbit reviews each PR once; your fix commits are re-reviewed by the local
+            CLI instead of spending another PR review. If you made commits this round:
+            a. Run `coderabbit usage`. If it shows 0 included reviews remaining or the CLI
+               is not signed in, skip to the push and say so; the loop falls back to a PR
+               review. Never pass --use-credits.
+            b. Run `coderabbit review --agent --fresh --base-commit <the probe's head SHA>`
+               over just your new commits. Handle its findings exactly like PR findings:
+               fix, or append to $ARTIFACTS_DIR/coderabbit/local-declined.md with the
+               reason. If you fixed anything, commit and repeat b (at most 3 runs).
+            c. Note whether the last run in b raised nothing you fixed ("clean").
+            Push with `git push origin HEAD:refs/heads/<current branch>` (the worktree branch
+            has no upstream; no pipe), then confirm with
+            `git ls-remote origin refs/heads/<current branch>` that the remote head matches your local head.
+            Only if c was clean and the remote head matches, `touch
+            $ARTIFACTS_DIR/coderabbit/local-reviewed-<pushed head SHA>` and include one line
+            in a PR comment (or your nitpick summary comment): "Fix commits re-reviewed with
+            the local CodeRabbit CLI: clean." Never write that marker for a head the CLI did not review clean.
+            Never force-push, rebase, merge the PR, convert it to draft, or edit its
+            title. Follow the repo's rules for code comments.
+
+            If a finding needs a decision only the maintainer can make (product wording,
+            scope expansion, a schema change, a conflict with the repo's rules), do not guess:
+            reply on the thread saying it is left for the maintainer, leave that thread
+            unresolved, and write the question to $ARTIFACTS_DIR/coderabbit/blocked.md.
+
+            Finish by stating what you fixed, what you declined and why, and what was pushed.
+
+        # The engine allows one fixed-length wait per body, so a rate limit's
+        # stated replenish time is slept here instead, then re-probed at once.
+        - id: cr-hold
+          depends_on: [cr-probe]
+          when: "$cr-probe.output.wait == 'hold'"
+          timeout: 3700000
+          bash: |
+            H=$cr-probe.output.hold_s
+            echo "CodeRabbit is rate-limited; holding $H s until reviews replenish."
+            sleep "$H"
+
+        # The wait must be the body's only sink, so it hangs off every sibling and
+        # runs only when the probe asked for a short wait.
+        - id: cr-pause
+          wait:
+            duration_ms: 300000
+          when: "$cr-probe.output.wait == 'short'"
+          depends_on: [cr-probe, cr-fix, cr-hold]
+          trigger_rule: none_failed_min_one_success
+
+  # PR review mode off: loop on CI alone until the head is green.
+  - id: ci
+    depends_on: [local-push, mode, coderabbit]
+    trigger_rule: all_done
+    when: "$mode.output.ci_loop == 'true'"
+    loop_group:
+      max_iterations: 36
+      fresh_context: true
+      until_bash: 'grep -qxE "done|blocked" "$ARTIFACTS_DIR/coderabbit/state" 2>/dev/null'
+      nodes:
+        - id: ci-probe
+          timeout: 120000
+          bash: |
+            set -uo pipefail
+            D="$ARTIFACTS_DIR/coderabbit"; mkdir -p "$D"
+            N=$pr.output.number
+            if [ -s "$D/blocked.md" ]; then echo blocked > "$D/state"; echo '{"state":"blocked"}'; exit 0; fi
+            HEAD=$(gh pr view "$N" --json headRefOid --jq .headRefOid)
+            B=$(gh pr checks "$N" --json bucket --jq '[.[].bucket] | if length == 0 then "pending" elif any(. == "fail" or . == "cancel") then "red" elif any(. == "pending") then "pending" else "green" end' 2>/dev/null || echo pending)
+            if [ "$B" = green ]; then echo done > "$D/state"; fi
+            printf '{"state":"%s","head":"%s"}\n' "$B" "$HEAD"
+          output_format:
+            type: object
+            properties:
+              state: { type: string }
+              head: { type: string }
+            required: [state]
+
+        - id: ci-fix
+          depends_on: [ci-probe]
+          when: "$ci-probe.output.state == 'red'"
+          model: large
+          prompt: |
+            You are finishing pull request #$pr.output.number ($pr.output.url) in this
+            worktree. Its review was the local CodeRabbit CLI; no PR review is coming. CI
+            is red on head $ci-probe.output.head. Read the repo's agent instructions
+            (CLAUDE.md, AGENTS.md, or equivalent) and the PR body first; they are binding.
+
+            Read the failing job logs (`gh pr checks $pr.output.number`, then
+            `gh run view <run> --log-failed`). Red this branch caused is this round's work:
+            fix it, run the checks the repo's instructions require for what you touched,
+            and commit using the repo's commit convention. Red it cannot have caused (an
+            infrastructure flake) gets one `gh run rerun --failed` per check per head; if
+            the same check is red again on the same head, explain it in
+            $ARTIFACTS_DIR/coderabbit/blocked.md and stop.
+
+            If you made commits: run `coderabbit usage`; if reviews remain, run
+            `coderabbit review --agent --fresh --base-commit $ci-probe.output.head` over
+            just your new commits, fix or append to
+            $ARTIFACTS_DIR/coderabbit/local-declined.md with the reason (at most 3 runs).
+            Never pass --use-credits. Push with
+            `git push origin HEAD:refs/heads/<current branch>` (no upstream; no pipe) and
+            confirm with `git ls-remote origin refs/heads/<current branch>`. If the last
+            CLI run was clean, touch $ARTIFACTS_DIR/coderabbit/local-reviewed-<pushed head SHA>.
+
+            A decision only the maintainer can make goes in blocked.md, not a guess.
+            Never force-push, rebase, merge the PR, convert it to draft, or edit its
+            title. Finish by stating what failed, what you changed and what was pushed.
+
+        - id: ci-pause
+          wait:
+            duration_ms: 300000
+          when: "$ci-probe.output.state == 'pending'"
+          depends_on: [ci-probe, ci-fix]
+          trigger_rule: none_failed_min_one_success
+
+  - id: cr-verdict
+    depends_on: [pr, coderabbit, ci, mode]
+    trigger_rule: none_failed_min_one_success
+    when: "$pr.output.has_pr == 'true'"
+    bash: |
+      URL=$pr.output.url
+      STATE=$(cat "$ARTIFACTS_DIR/coderabbit/state" 2>/dev/null || echo missing)
+      if [ "$STATE" = "blocked" ]; then
+        echo "CodeRabbit loop stopped for a maintainer decision on $URL:" >&2
+        cat "$ARTIFACTS_DIR/coderabbit/blocked.md" >&2 2>/dev/null
+        exit 1
+      fi
+      if [ "$STATE" = "skipped" ]; then
+        echo "$URL: CodeRabbit skipped the head (every changed file is path-filtered), CI green. No review was performed."
+        exit 0
+      fi
+      if [ "$STATE" != "done" ]; then
+        echo "CodeRabbit loop ended in state '$STATE' on $URL" >&2
+        exit 1
+      fi
+      if [ $mode.output.pr_review != "true" ]; then
+        echo "$URL: reviewed with the local CodeRabbit CLI (no PR review requested), CI green."
+        exit 0
+      fi
+      echo "$URL: head reviewed (PR review, plus local CLI re-review of later fixes) with nothing open, CI green."

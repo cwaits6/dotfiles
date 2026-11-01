@@ -1,0 +1,80 @@
+name: ship-coderabbit
+description: |
+  archon-ship, then a CodeRabbit loop: once the delivery tail has reviewed the
+  PR internally and marked it ready, wait for CodeRabbit, address every thread
+  and nitpick (fix, or reply with the reason it is declined), resolve the
+  threads, and repeat until CodeRabbit has reviewed the head with nothing open
+  and CI is green.
+
+  Use when: a ticket should go all the way to a CodeRabbit-clean,
+  green, ready PR. NOT for: merging (always the maintainer).
+
+requires: [github]
+
+inputs:
+  target:
+    default: ""
+    description: >-
+      What to take through the pipeline. Empty means the run's trigger message.
+  errors:
+    default: "auto"
+    description: Silent-failure lens — auto, true, or false.
+  hold_label:
+    default: "skip-review"
+    description: >-
+      Label put on the draft PR so the ready flip spends no CodeRabbit PR review
+      before local reviews. Only effective when the repo's .coderabbit.yaml
+      excludes it; if the label does not exist the hold is skipped.
+  pr_review:
+    default: "false"
+    description: >-
+      "true" requests one CodeRabbit PR review after the local reviews and
+      loops on it; "false" re-marks the PR ready after the local reviews so
+      CodeRabbit auto-reviews once, never waits for it, and loops on CI only.
+
+nodes:
+  - id: ship
+    include: archon-ship
+    with:
+      target: "$INPUTS.target"
+      errors: "$INPUTS.errors"
+
+  # Runs alongside ship: label the draft PR with hold_label the moment it exists,
+  # so the ready flip does not spend a CodeRabbit PR review before the tail's
+  # local reviews (archon-ship marks the PR ready when CI is green). The tail lifts
+  # the label once the local reviews are done; see coderabbit-review-loop.
+  # Polls in-process rather than through a wait: the engine lets only one
+  # suspending node own the run, and ship already does.
+  - id: hold-review
+    timeout: 36000000
+    bash: |
+      D="$ARTIFACTS_DIR/coderabbit"; mkdir -p "$D"
+      while [ ! -f "$D/ship-ended" ]; do
+        if DRAFT=$(gh pr view --json isDraft --jq .isDraft 2>/dev/null); then
+          if [ "$DRAFT" = "true" ]; then
+            if gh pr edit --add-label "$INPUTS_HOLD_LABEL" >/dev/null 2>&1; then
+              echo labeled > "$D/review-held"; echo "Labeled the draft PR $INPUTS_HOLD_LABEL."; exit 0
+            fi
+            echo missed > "$D/review-held"; echo "Could not apply $INPUTS_HOLD_LABEL; CodeRabbit reviews on its own."; exit 0
+          else
+            echo missed > "$D/review-held"; echo "PR was already ready; CodeRabbit reviews on its own."; exit 0
+          fi
+        fi
+        sleep 60
+      done
+      echo "ship ended without a PR."
+
+  - id: ship-ended
+    depends_on: [ship]
+    trigger_rule: all_done
+    bash: mkdir -p "$ARTIFACTS_DIR/coderabbit" && touch "$ARTIFACTS_DIR/coderabbit/ship-ended"
+
+  # Shares this run's worktree and artifact store; skips itself when archon-ship
+  # stopped without a ready PR.
+  - id: coderabbit
+    include: coderabbit-review-loop
+    with:
+      hold_label: "$INPUTS.hold_label"
+      pr_review: "$INPUTS.pr_review"
+    depends_on: [ship, ship-ended, hold-review]
+    trigger_rule: all_done
