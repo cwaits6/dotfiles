@@ -1,0 +1,134 @@
+name: ship-coderabbit
+description: |
+  archon-ship, then a CodeRabbit loop: once the delivery tail has reviewed the
+  PR internally and marked it ready, wait for CodeRabbit, address every thread
+  and nitpick (fix, or reply with the reason it is declined), resolve the
+  threads, and repeat until CodeRabbit has reviewed the head with nothing open
+  and CI is green.
+
+  Use when: a ticket should go all the way to a CodeRabbit-clean,
+  green, ready PR. NOT for: merging (always the maintainer).
+
+requires: [github]
+
+inputs:
+  target:
+    default: ""
+    description: >-
+      What to take through the pipeline. Empty means the run's trigger message.
+  errors:
+    default: "auto"
+    description: Silent-failure lens — auto, true, or false.
+  hold_label:
+    default: "skip-review"
+    description: >-
+      Label put on the draft PR so the ready flip spends no CodeRabbit PR review
+      before local reviews. Only effective when the repo's .coderabbit.yaml
+      excludes it; if the label does not exist the hold is skipped.
+  pr_review:
+    default: "false"
+    description: >-
+      "true" requests one CodeRabbit PR review after the local reviews and
+      loops on it; "false" re-marks the PR ready after the local reviews so
+      CodeRabbit auto-reviews once, never waits for it, and loops on CI only.
+
+nodes:
+  - id: ship
+    include: archon-ship
+    with:
+      target: "$INPUTS.target"
+      errors: "$INPUTS.errors"
+
+  # Runs alongside ship: label the draft PR with hold_label the moment it exists,
+  # so the ready flip does not spend a CodeRabbit PR review before the tail's
+  # local reviews (archon-ship marks the PR ready when CI is green). The tail lifts
+  # the label once the local reviews are done; see coderabbit-review-loop.
+  # Polls in-process rather than through a wait: the engine lets only one
+  # suspending node own the run, and ship already does.
+  - id: hold-review
+    timeout: 36000000
+    bash: |
+      D="$ARTIFACTS_DIR/coderabbit"; mkdir -p "$D"
+      while [ ! -f "$D/ship-ended" ]; do
+        if DRAFT=$(gh pr view --json isDraft --jq .isDraft 2>/dev/null); then
+          if [ "$DRAFT" = "true" ]; then
+            if gh pr edit --add-label "$INPUTS_HOLD_LABEL" >/dev/null 2>&1; then
+              echo labeled > "$D/review-held"; echo "Labeled the draft PR $INPUTS_HOLD_LABEL."; exit 0
+            fi
+            echo missed > "$D/review-held"; echo "Could not apply $INPUTS_HOLD_LABEL; CodeRabbit reviews on its own."; exit 0
+          else
+            echo missed > "$D/review-held"; echo "PR was already ready; CodeRabbit reviews on its own."; exit 0
+          fi
+        fi
+        sleep 60
+      done
+      echo "ship ended without a PR."
+
+  - id: ship-ended
+    depends_on: [ship]
+    trigger_rule: all_done
+    bash: mkdir -p "$ARTIFACTS_DIR/coderabbit" && touch "$ARTIFACTS_DIR/coderabbit/ship-ended"
+
+  # A screenshot problem never stops the run: every node below runs on all_done,
+  # and the upload script exits 0 and says so on the PR when it fails.
+  - id: screenshots-gate
+    depends_on: [ship-ended]
+    trigger_rule: all_done
+    bash: |
+      if gh pr view --json number >/dev/null 2>&1 && [ -n "$(find "$ARTIFACTS_DIR/screenshots" -type f 2>/dev/null | head -1)" ]; then
+        echo '{"ready":"true"}'
+      else
+        echo '{"ready":"false"}'
+      fi
+    output_format:
+      type: object
+      properties:
+        ready: { type: string }
+      required: [ready]
+
+  - id: screenshots-pick
+    depends_on: [screenshots-gate]
+    when: "$screenshots-gate.output.ready == 'true'"
+    model: large
+    prompt: |
+      This run's pull request has screenshots in $ARTIFACTS_DIR/screenshots. Choose
+      the ones to show on the PR. Everything you choose is published to a public repo
+      and stays in its history, so an image that is not clearly safe is left out.
+
+      1. Read the PR with `gh pr view` and `gh pr diff --name-only`. If it changes no UI,
+         stop without writing anything.
+      2. Choose the screens that best show the change: at most 12 images, normally 2
+         screens with before and after at 390 and 1280 wide. Skip near-duplicates.
+      3. Open every image you might choose with the Read tool. Leave an image out if it
+         shows anything other than test data. The shared local stack also holds rows
+         people typed by hand, so an image passes only if each person's name and each
+         piece of written content appears in the repo's seed data or fixtures
+         (`git grep`), or in a fixture this run created. Also leave out images showing
+         tokens, secrets, invite or sign-in links, or a real address, phone or email.
+         Nothing is published without being opened and passing this check.
+      4. Write $ARTIFACTS_DIR/pr-screenshots/manifest.json (mkdir -p the directory):
+         {"notes": "...", "shots": [{"screen": "Profile", "width": 390, "before": "before-profile-390.png", "after": "after-profile-390.png"}]}
+         Paths are relative to $ARTIFACTS_DIR/screenshots. `before` is null for a new
+         screen. Put caveats a reviewer needs in `notes`, and say what was left out and
+         why. Do not edit the PR, and do not upload anything: the next step does that.
+
+      If nothing passes, write no manifest and say why in your final message.
+
+  - id: screenshots-publish
+    depends_on: [screenshots-pick]
+    trigger_rule: all_done
+    script: publish-pr-screenshots
+    runtime: uv
+    timeout: 300000
+    with:
+      artifacts: "$ARTIFACTS_DIR"
+
+  # Shares this run's worktree and artifact store; skips itself when archon-ship
+  # stopped without a ready PR.
+  - id: coderabbit
+    include: coderabbit-review-loop
+    with:
+      hold_label: "$INPUTS.hold_label"
+      pr_review: "$INPUTS.pr_review"
+    depends_on: [ship, ship-ended, hold-review, screenshots-publish]
+    trigger_rule: all_done

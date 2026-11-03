@@ -14,6 +14,7 @@ Managed with [GNU Stow](https://www.gnu.org/software/stow/).
 - **ghostty** — Ghostty terminal config
 - **claude** — Claude Code custom agents and skills
 - **zsh** — zsh with oh-my-zsh and Powerlevel10k
+- **archon** — Archon workflows that add local and PR CodeRabbit reviews to a shipped PR
 - **herdr** — Herdr terminal multiplexer config
 
 ## Prerequisites
@@ -34,7 +35,7 @@ cd ~/.dotfiles
 
 # Apply all configs
 stow nvim ghostty claude zsh
-stow --no-folding herdr
+stow --no-folding herdr archon
 
 # Or pick individual ones
 stow nvim
@@ -42,4 +43,19 @@ stow zsh
 stow ghostty
 stow claude
 stow --no-folding herdr
+stow --no-folding archon
 ```
+
+`archon` needs `--no-folding`: `~/.archon` also holds credentials, the database and logs, so only these files should be linked into it.
+
+## Archon workflows
+
+`ship-coderabbit` and `coderabbit-review-loop` work in any repo. For the local CodeRabbit review to run before the PR review, a repo needs a `skip-review` label and this in its `.coderabbit.yaml`:
+
+```yaml
+reviews:
+  auto_review:
+    labels: ["!skip-review"]
+```
+
+Without it, CodeRabbit reviews the PR the first time it is marked ready.
