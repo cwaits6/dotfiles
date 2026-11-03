@@ -81,14 +81,28 @@ nodes:
       until_bash: 'grep -qx clean "$ARTIFACTS_DIR/coderabbit/local-state" 2>/dev/null || { [ "$INPUTS_PR_REVIEW" = "true" ] && grep -qx exhausted "$ARTIFACTS_DIR/coderabbit/local-state" 2>/dev/null; }'
       nodes:
         # Without a PR review the local CLI is the only review, so an empty
-        # hourly allowance (shared by every parallel run) is waited out.
+        # hourly allowance (shared by every parallel run) is waited out. A usage
+        # lookup with no count is a different problem and waiting won't fix it:
+        # an expired session still passes `auth status` and `doctor`, so stop.
         - id: local-quota
           timeout: 4200000
           bash: |
             [ $mode.output.pr_review = "true" ] && exit 0
+            D="$ARTIFACTS_DIR/coderabbit"; mkdir -p "$D"; rm -f "$D/cli-unavailable"
+            LOOKUP_FAILS=0
             for i in $(seq 1 13); do
               R=$(coderabbit usage 2>/dev/null | sed -nE 's/^ *Remaining *: *([0-9]+) of.*/\1/p' | head -1)
-              [ -n "$R" ] && [ "$R" -gt 0 ] && { echo "CodeRabbit CLI reviews remaining: $R"; exit 0; }
+              if [ -z "$R" ]; then
+                LOOKUP_FAILS=$((LOOKUP_FAILS + 1))
+                if [ "$LOOKUP_FAILS" -ge 3 ]; then
+                  MSG="CodeRabbit usage lookup failed 3 times, so the CLI session has probably expired (or CodeRabbit is unreachable). Run 'coderabbit auth login', confirm 'coderabbit usage' shows a count, then 'archon workflow resume <run-id> --detach'."
+                  echo "$MSG" > "$D/cli-unavailable"
+                  echo "$MSG" >&2; exit 1
+                fi
+                sleep 20; continue
+              fi
+              LOOKUP_FAILS=0
+              [ "$R" -gt 0 ] && { echo "CodeRabbit CLI reviews remaining: $R"; exit 0; }
               echo "No CLI reviews left; waiting 5 minutes."; sleep 300
             done
             echo "CLI allowance still empty after an hour; the review step will record it."
@@ -139,6 +153,10 @@ nodes:
     trigger_rule: all_done
     bash: |
       set -uo pipefail
+      # Keeps the hold label on, so the PR's one review isn't spent unreviewed.
+      if [ -s "$ARTIFACTS_DIR/coderabbit/cli-unavailable" ]; then
+        cat "$ARTIFACTS_DIR/coderabbit/cli-unavailable" >&2; exit 1
+      fi
       N=$pr.output.number
       L="$INPUTS_HOLD_LABEL"
       HELD=no
@@ -373,6 +391,11 @@ nodes:
     when: "$pr.output.has_pr == 'true'"
     bash: |
       URL=$pr.output.url
+      if [ -s "$ARTIFACTS_DIR/coderabbit/cli-unavailable" ]; then
+        echo "Local CodeRabbit review did not run on $URL:" >&2
+        cat "$ARTIFACTS_DIR/coderabbit/cli-unavailable" >&2
+        exit 1
+      fi
       STATE=$(cat "$ARTIFACTS_DIR/coderabbit/state" 2>/dev/null || echo missing)
       if [ "$STATE" = "blocked" ]; then
         echo "CodeRabbit loop stopped for a maintainer decision on $URL:" >&2
